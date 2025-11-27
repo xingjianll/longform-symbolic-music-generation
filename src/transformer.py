@@ -524,8 +524,9 @@ class Qwen3ForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
         logits = self.lm_head(hidden_states[:, slice_indices, :])
 
         loss = None
+        criterion = nn.MSELoss()
         if labels is not None:
-            loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
+            loss = criterion(logits, labels)
 
         return CausalLMOutputWithPast(
             loss=loss,
