@@ -25,6 +25,7 @@ from typing import Optional, Union
 import torch
 import wandb
 from torch import nn
+from transformers import AutoConfig
 
 from transformers.activations import ACT2FN
 from transformers.cache_utils import Cache, DynamicCache
@@ -603,8 +604,11 @@ class MidiQwen(pl.LightningModule):
 
         self.tokenizer = tokenizer
         config = Qwen3Config()
-        config.num_hidden_layers = 16  # 28
-        config.max_position_embeddings = CONTEXT_SIZE
+        config.hidden_size = 512  # 1024
+        config.num_hidden_layers = 14  # 28
+        config.num_attention_heads = 8  # 16
+        config.num_key_value_heads = 8
+        config.intermediate_size = 2048  # 3072
         self.model = Qwen3ForCausalLM(config)
         self.model.gradient_checkpointing_enable()
         self.lr = lr
