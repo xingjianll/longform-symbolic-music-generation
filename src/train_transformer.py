@@ -8,10 +8,9 @@ import torch
 
 from sklearn.model_selection import train_test_split
 
-from src.modeling import MidiQwenNew
 from src.dataloader import MidiDataset4D
-from src.transformer import MidiAria
 from src.utils import EPOCHS
+from src.transformer import MidiQwen
 
 BATCH_SIZE = 32
 CONTEXT_SIZE = 4096
@@ -83,7 +82,7 @@ def main():
         every_n_train_steps=steps_per_half_epoch,
     )
 
-    model = MidiQwenNew(None, train_loader, lr=5e-4, warmup_steps=100)
+    model = MidiQwen(None, train_loader, lr=5e-4, warmup_steps=100)
 
     trainer = pl.Trainer(
         max_epochs=EPOCHS,
