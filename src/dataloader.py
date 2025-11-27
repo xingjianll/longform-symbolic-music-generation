@@ -29,14 +29,14 @@ def _create_position_tensors(notes) -> torch.Tensor:
     curr_time = 0
     for note in notes:
         start_time = float(note.start)
-        delta_time = max(start_time - curr_time, 8)
+        delta_time = min(start_time - curr_time, 8)
         curr_time = float(note.start)
         end_time = float(note.end)
-        duration = max(end_time - start_time, 8)
+        duration = min(end_time - start_time, 8)
         pitch = int(note.pitch)
         velocity = int(note.velocity)
 
-        positions.append([delta_time, duration, pitch, velocity])
+        positions.append([delta_time/8, duration/8, pitch/128, velocity/128])
 
 
     return torch.tensor(positions, dtype=torch.float32)
@@ -45,7 +45,7 @@ def _create_position_tensors(notes) -> torch.Tensor:
 class MidiDataset4D(Dataset):
     """Dataset that concatenates all MIDI files and chunks for pretraining."""
 
-    def __init__(self, files: List[Path], max_seq_len: int = CONTEXT_SIZE):
+    def __init__(self, files: List[Path], max_seq_len: int = 4096):
         self.files = files
         self.max_seq_len = max_seq_len
         self.chunks = []
@@ -119,16 +119,6 @@ class MidiDataset4D(Dataset):
 
             # Create attention mask (1 for real tokens, 0 for padding)
             attention_mask = torch.ones(self.max_seq_len, dtype=torch.long)
-
-            # Pad chunk to max_seq_len if it's the last chunk and shorter
-            if chunk.shape[0] < self.max_seq_len:
-                pad_len = self.max_seq_len - chunk.shape[0]
-                last_time = chunk[-1, 0].item()
-                pad_tensor = torch.tensor([last_time, 0.0, 2, 0]).repeat(pad_len, 1)
-                chunk = torch.cat([chunk, pad_tensor], dim=0)
-
-                # Mask the padded positions
-                attention_mask[original_len:] = 0
 
             labels = chunk[1:].clone()  # Next position prediction
             last_position = chunk[-1:].clone()

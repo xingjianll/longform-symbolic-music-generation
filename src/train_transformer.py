@@ -23,7 +23,7 @@ def custom_collate_fn(batch):
 
     return {
         'input_ids': input_ids_batch,
-        'attention_mask': attention_mask_batch,
+        'attention_mask': None,
         'labels': labels_batch,
     }
 
@@ -47,6 +47,7 @@ def main():
 
     print("Creating val dataset...")
     val_dataset = MidiDataset4D(train_files[:1], max_seq_len=MAX_SEQ_LEN)
+    print(train_files[:1])
 
     # Create dataloaders
     train_loader = DataLoader(
@@ -66,7 +67,7 @@ def main():
     )
 
     # Setup logging and checkpoints
-    wandb_logger = WandbLogger(project="symbolic-music-4d", log_model=True)
+    wandb_logger = WandbLogger(project="symbolic-music-new", log_model=True)
 
     steps_per_epoch = len(train_loader)
     steps_per_half_epoch = steps_per_epoch // 2
