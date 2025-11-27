@@ -604,11 +604,11 @@ class MidiQwen(pl.LightningModule):
 
         self.tokenizer = tokenizer
         config = Qwen3Config()
-        config.hidden_size = 512  # 1024
-        config.num_hidden_layers = 14  # 28
+        config.hidden_size = 768  # 1024
+        config.num_hidden_layers = 16  # 28
         config.num_attention_heads = 8  # 16
         config.num_key_value_heads = 8
-        config.intermediate_size = 2048  # 3072
+        config.intermediate_size = 3072  # 3072
         self.model = Qwen3ForCausalLM(config)
         self.model.gradient_checkpointing_enable()
         self.lr = lr

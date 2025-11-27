@@ -12,7 +12,7 @@ from src.dataloader import MidiDataset4D
 from src.transformer import MidiQwen
 from src.utils import CONTEXT_SIZE, EPOCHS
 
-BATCH_SIZE = 32
+BATCH_SIZE = 72*2
 MAX_SEQ_LEN = CONTEXT_SIZE
 
 def custom_collate_fn(batch):
@@ -84,7 +84,7 @@ def main():
     )
     print("4")
     model = MidiQwen(None, steps_per_epoch, lr=5e-4, warmup_steps=1000)
-    model.load_from_checkpoint("/workspace/longform-symbolic-music-generation/src/llama-epoch=00-step=02017-val_loss=2.5867.ckpt")
+    # model.load_from_checkpoint("/workspace/longform-symbolic-music-generation/src/llama-epoch=00-step=02017-val_loss=2.5867.ckpt")
     print("5")
     trainer = pl.Trainer(
         max_epochs=EPOCHS,
