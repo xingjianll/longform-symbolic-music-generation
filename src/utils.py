@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-EPOCHS=512
+EPOCHS=24
 CONTEXT_SIZE=4096
 
 
