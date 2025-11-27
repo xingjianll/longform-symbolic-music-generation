@@ -31,7 +31,7 @@ def custom_collate_fn(batch):
 def main():
     # Setup paths
     project_dir = Path(__file__).resolve().parents[1]
-    data_dir = project_dir / "data" / "aria-midi-v1-unique" / "data"
+    data_dir = project_dir / "data" / "aria-midi-v1-deduped-ext" / "data"
 
     # Get all MIDI files
     all_files = list(sorted(data_dir.glob("**/*.mid")))
@@ -43,19 +43,20 @@ def main():
 
     # Create datasets (no tokenizer needed)
     print("Creating train dataset...")
-    train_dataset = MidiDataset4D(train_files[:1], max_seq_len=MAX_SEQ_LEN)
+    train_dataset = MidiDataset4D(train_files, max_seq_len=MAX_SEQ_LEN)
 
     print("Creating val dataset...")
-    val_dataset = MidiDataset4D(train_files[:1], max_seq_len=MAX_SEQ_LEN)
+    val_dataset = MidiDataset4D(val_files, max_seq_len=MAX_SEQ_LEN)
     print(train_files[:1])
 
     # Create dataloaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=BATCH_SIZE,
-        shuffle=False,
+        shuffle=True,
         collate_fn=custom_collate_fn,
-        num_workers=0
+        num_workers=0,
+        drop_last=True
     )
 
     val_loader = DataLoader(
@@ -63,9 +64,10 @@ def main():
         batch_size=BATCH_SIZE,
         shuffle=False,
         collate_fn=custom_collate_fn,
-        num_workers=0
+        num_workers=0,
+        drop_last=True
     )
-
+    print("3")
     # Setup logging and checkpoints
     wandb_logger = WandbLogger(project="symbolic-music-new", log_model=True)
 
@@ -80,9 +82,9 @@ def main():
         mode='min',
         every_n_train_steps=steps_per_half_epoch,
     )
-
-    model = MidiQwen(None, train_loader, lr=5e-4, warmup_steps=100)
-
+    print("4")
+    model = MidiQwen(None, steps_per_epoch, lr=5e-4, warmup_steps=100)
+    print("5")
     trainer = pl.Trainer(
         max_epochs=EPOCHS,
         logger=wandb_logger,

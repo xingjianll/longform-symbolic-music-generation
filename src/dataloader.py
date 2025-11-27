@@ -5,6 +5,8 @@ import symusic
 from torch.utils.data import Dataset
 import torch
 from src.utils import CONTEXT_SIZE
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
 def merge_score_tracks(score: symusic.Score) -> None:
     """
     Merge tracks in a score by combining their notes into a single track.
@@ -23,6 +25,14 @@ def merge_score_tracks(score: symusic.Score) -> None:
 def _create_position_tensors(notes) -> torch.Tensor:
     """Create 4D position tensors [start_time, duration, pitch, velocity]."""
     positions = []
+    mu_dt = 0.1226
+    std_dt = (0.0568 ** 0.5)  # ≈ 0.2656
+
+    mu_dur = 0.6158
+    std_dur = (0.8221 ** 0.5)  # ≈ 0.8703
+
+    mu_vel = 64.6879
+    std_vel = (314.4664 ** 0.5)  # ≈ 18.57
 
     # BOS token: start_time=0, duration=0, pitch=0, velocity=0
     positions.append([0.0, 0.0, 0, 0])
@@ -36,16 +46,49 @@ def _create_position_tensors(notes) -> torch.Tensor:
         pitch = int(note.pitch)
         velocity = int(note.velocity)
 
-        positions.append([delta_time/8, duration/8, pitch/128, velocity/128])
+        positions.append([(delta_time-mu_dt)/std_dt, (duration-mu_dur)/std_dur, pitch, (velocity-mu_vel)/std_vel])
 
 
     return torch.tensor(positions, dtype=torch.float32)
 
 
+from pathlib import Path
+from typing import List
+
+def _process_single_file(file_path: Path):
+    """
+    Worker function that processes a single MIDI file and returns
+    a position tensor or None if it fails or should be skipped.
+    """
+    try:
+        score = symusic.Score.from_file(str(file_path))
+
+        merge_score_tracks(score)
+        score = score.to("second")
+
+        if not score.tracks or len(score.tracks[0].notes) == 0:
+            return None
+
+        track = score.tracks[0]
+        all_notes = list(track.notes)
+
+        if len(all_notes) < 5:
+            return None
+
+        all_notes.sort(key=lambda x: x.start)
+
+        position_tensors = _create_position_tensors(all_notes)
+        return position_tensors.numpy()
+
+    except Exception as e:
+        print(f"Failed to process {file_path}: {e}")
+        return None
+
+
 class MidiDataset4D(Dataset):
     """Dataset that concatenates all MIDI files and chunks for pretraining."""
 
-    def __init__(self, files: List[Path], max_seq_len: int = 4096):
+    def __init__(self, files: List[Path], max_seq_len: int = CONTEXT_SIZE):
         self.files = files
         self.max_seq_len = max_seq_len
         self.chunks = []
@@ -60,55 +103,45 @@ class MidiDataset4D(Dataset):
 
         print(f"Created {len(self.chunks)} chunks for training")
 
-    def _load_and_concatenate_files(self, file_list: List[Path]):
-        """Load all MIDI files and concatenate into one big sequence."""
+    def _load_and_concatenate_files(self, file_list: List[Path], batch_size=50000):
+        """Load all MIDI files in parallel in batches and concatenate."""
+
         all_tensors = []
 
-        for file_path in file_list:
-            try:
-                # Load MIDI file using symusic
-                score = symusic.Score.from_file(str(file_path))
+        # Break file_list into batches
+        for start in range(0, len(file_list), batch_size):
+            batch_files = file_list[start : start + batch_size]
 
-                # Use preprocessing functions to clean up the score (in tick format)
-                merge_score_tracks(score)
+            print(f"Processing batch {start//batch_size+1} / { (len(file_list)-1)//batch_size + 1 }")
 
-                # Convert to seconds after preprocessing
-                score = score.to("second")
+            with ProcessPoolExecutor(max_workers=20) as executor:
+                futures = {executor.submit(_process_single_file, fp): fp for fp in batch_files}
 
-                # Extract notes from the merged track
-                if not score.tracks or len(score.tracks[0].notes) == 0:
-                    continue
+                for i, future in enumerate(as_completed(futures)):
+                    fp = futures[future]
+                    print(f"  file {i+1}/{len(batch_files)}")
 
-                track = score.tracks[0]
-                all_notes = list(track.notes)
+                    result = future.result()
 
-                # Skip very short pieces
-                if len(all_notes) < 5:
-                    continue
+                    if result is not None:
+                        # result is numpy, convert back to torch here
+                        all_tensors.append(torch.from_numpy(result))
 
-                # Sort notes by start time
-                all_notes.sort(key=lambda x: x.start)
+            # Force cleanup between batches
+            import gc
+            gc.collect()
+            torch.cuda.empty_cache()
 
-                # Create 4D position tensors [start_time, duration, pitch, velocity]
-                position_tensors = _create_position_tensors(all_notes)
-
-                # Add this piece to the concatenated sequence
-                all_tensors.append(position_tensors)
-
-            except Exception as e:
-                print(f"Failed to process {file_path}: {e}")
-                continue
-
-        # Concatenate all pieces
+        # Final concatenation
         if all_tensors:
-            concatenated = torch.cat(all_tensors, dim=0)
-            return concatenated
+            return torch.cat(all_tensors, dim=0)
         else:
-            return torch.tensor([], dtype=torch.float32).reshape(0, 4)
+            return torch.zeros((0, 4), dtype=torch.float32)
 
     def _create_chunks(self, all_position_tensors):
         """Split concatenated sequence into fixed-size chunks."""
         total_len = all_position_tensors.shape[0]
+        PAD = torch.zeros(4, dtype=torch.float32)
 
         for i in range(0, total_len, self.max_seq_len):
             print(total_len // self.max_seq_len)
@@ -117,15 +150,19 @@ class MidiDataset4D(Dataset):
             chunk = all_position_tensors[i:end_idx]
             original_len = chunk.shape[0]
 
+            if original_len < self.max_seq_len:
+                pad_amount = self.max_seq_len - original_len
+                pad_tokens = PAD.unsqueeze(0).repeat(pad_amount, 1)  # (pad_amount, 131)
+                chunk = torch.cat([chunk, pad_tokens], dim=0)
+
             # Create attention mask (1 for real tokens, 0 for padding)
-            attention_mask = torch.ones(self.max_seq_len, dtype=torch.long)
+            attention_mask = torch.zeros(self.max_seq_len, dtype=torch.long)
+            attention_mask[:original_len] = 1
 
             labels = chunk[1:].clone()  # Next position prediction
             last_position = chunk[-1:].clone()
             labels = torch.cat([labels, last_position], dim=0)
-
-            if original_len < self.max_seq_len:
-                labels[original_len:] = -100
+            labels[original_len:] = -100
 
             self.chunks.append({
                 'input_ids': chunk,

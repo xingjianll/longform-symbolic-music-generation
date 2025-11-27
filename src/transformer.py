@@ -23,6 +23,7 @@ from collections.abc import Callable
 from typing import Optional, Union
 
 import torch
+import wandb
 from torch import nn
 
 from transformers.activations import ACT2FN
@@ -341,7 +342,7 @@ class Qwen3Model(Qwen3PreTrainedModel):
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
 
-        self.embed_tokens = nn.Linear(4, config.hidden_size, False)
+        self.embed_tokens = nn.Linear(131, config.hidden_size, False)
         self.layers = nn.ModuleList(
             [Qwen3DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
@@ -426,6 +427,7 @@ class Qwen3Model(Qwen3PreTrainedModel):
             past_key_values=past_key_values if use_cache else None,
         )
 
+import torch.nn.functional as F
 
 @auto_docstring
 class Qwen3ForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
@@ -437,7 +439,7 @@ class Qwen3ForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
         super().__init__(config)
         self.model = Qwen3Model(config)
         self.vocab_size = config.vocab_size
-        self.lm_head = nn.Linear(config.hidden_size, 4, bias=False)
+        self.lm_head = nn.Linear(config.hidden_size, 131, bias=False)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -479,8 +481,21 @@ class Qwen3ForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
         >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
         "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
         ```"""
+        start = input_ids[..., 0].unsqueeze(-1)  # (B, S, 1)
+        duration = input_ids[..., 1].unsqueeze(-1)  # (B, S, 1)
+        pitch_idx = input_ids[..., 2].long()  # (B, S)
+        velocity = input_ids[..., 3].unsqueeze(-1)  # (B, S, 1)
+
+        pitch_one_hot = F.one_hot(pitch_idx, num_classes=128).float()
+        new_input_ids = torch.cat([
+            start,  # 1
+            duration,  # 1
+            velocity,  # 1
+            pitch_one_hot  # 128
+        ], dim=-1)
+
         outputs: BaseModelOutputWithPast = self.model(
-            input_ids=input_ids,
+            input_ids=new_input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
@@ -495,10 +510,43 @@ class Qwen3ForCausalLM(Qwen3PreTrainedModel, GenerationMixin):
         slice_indices = slice(-logits_to_keep, None) if isinstance(logits_to_keep, int) else logits_to_keep
         logits = self.lm_head(hidden_states[:, slice_indices, :])
 
-        loss = None
-        criterion = nn.MSELoss()
+        pred_dt = logits[..., 0]
+        pred_duration = logits[..., 1]
+        pred_velocity = logits[..., 2]
+        pred_pitch_logits = logits[..., 3:]
+
+        labels_dt = labels[..., 0]
+        labels_duration = labels[..., 1]
+        labels_pitch = labels[..., 2].long()
+        labels_velocity = labels[..., 3]
+
+        mask = (labels_pitch != -100)
         if labels is not None:
-            loss = criterion(logits, labels)
+            pred_dt = pred_dt[mask]
+            pred_duration = pred_duration[mask]
+            pred_velocity = pred_velocity[mask]
+            pred_pitch_logits = pred_pitch_logits[mask]
+
+            labels_dt = labels_dt[mask]
+            labels_duration = labels_duration[mask]
+            labels_velocity = labels_velocity[mask]
+            labels_pitch = labels_pitch[mask]
+
+            # Individual loss components
+            loss_dt = F.mse_loss(pred_dt, labels_dt)
+            loss_duration = F.mse_loss(pred_duration, labels_duration)
+            loss_velocity = F.mse_loss(pred_velocity, labels_velocity)
+            loss_pitch = F.cross_entropy(pred_pitch_logits, labels_pitch)
+
+            wandb.log({
+                "loss/start": loss_dt.mean(),
+                "loss/duration": loss_duration.mean(),
+                "loss/pitch": loss_pitch.mean(),
+                "loss/velocity": loss_velocity.mean(),
+            })
+
+            # Final multitask loss (weights optional)
+            loss = loss_dt + loss_duration + loss_velocity + loss_pitch
 
         return CausalLMOutputWithPast(
             loss=loss,
@@ -549,7 +597,7 @@ def _get_optim(
 
 import lightning as pl
 class MidiQwen(pl.LightningModule):
-    def __init__(self, tokenizer, dataloader, lr=5e-5, warmup_steps=1000):
+    def __init__(self, tokenizer, size, lr=5e-5, warmup_steps=1000):
         super().__init__()
         self.save_hyperparameters()
 
@@ -564,7 +612,7 @@ class MidiQwen(pl.LightningModule):
         self.model = Qwen3ForCausalLM(config)
         self.lr = lr
         self.warmup_steps = warmup_steps
-        self.dataloader = dataloader
+        self.size = size
 
 
     def forward(self, input_ids, attention_mask=None, labels=None):
@@ -583,7 +631,7 @@ class MidiQwen(pl.LightningModule):
         return val_loss
 
     def configure_optimizers(self):
-        steps_per_epoch = len(self.dataloader)
+        steps_per_epoch = self.size
         optimizer, scheduler = _get_optim(
             lr=self.lr,
             model=self,
