@@ -18,7 +18,7 @@ from transformers.modeling_outputs import (
     BaseModelOutputWithPoolingAndProjection,
 )
 
-from src.train_transformer import EPOCHS
+from src.utils import EPOCHS
 
 logger = logging.get_logger(__name__)
 
@@ -97,13 +97,13 @@ class AriaPreTrainedModel(PreTrainedModel):
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
             module.weight.data.normal_(
-                mean=0.0, std=self.config.initializer_range
+                mean=0.0, std=0.02
             )
             if module.bias is not None:
                 module.bias.data.zero_()
         elif isinstance(module, nn.Embedding):
             module.weight.data.normal_(
-                mean=0.0, std=self.config.initializer_range
+                mean=0.0, std=0.02
             )
             if module.padding_idx is not None:
                 module.weight.data[module.padding_idx].zero_()
@@ -553,9 +553,7 @@ class AriaForCausalLM(AriaPreTrainedModel, GenerationMixin):
             labels = labels.to(lm_logits.device)
             # we are doing next-token prediction; shift prediction scores and input ids by one
             loss_fct = MSELoss()
-            lm_loss = loss_fct(
-                lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1)
-            )
+            lm_loss = loss_fct(lm_logits, labels)
 
         if not return_dict:
             output = (lm_logits,) + outputs[1:]
@@ -649,7 +647,8 @@ def _get_optim(
     return optimizer, lr_scheduler
 
 
-import pytorch_lightning as pl
+import lightning as pl
+from transformers import AutoConfig
 
 
 class MidiAria(pl.LightningModule):

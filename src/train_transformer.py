@@ -8,9 +8,11 @@ import torch
 
 from sklearn.model_selection import train_test_split
 
+from src.modeling import MidiQwenNew
 from src.dataloader import MidiDataset4D
 from src.transformer import MidiAria
-EPOCHS = 1000
+from src.utils import EPOCHS
+
 BATCH_SIZE = 32
 CONTEXT_SIZE = 4096
 MAX_SEQ_LEN = CONTEXT_SIZE
@@ -18,22 +20,20 @@ MAX_SEQ_LEN = CONTEXT_SIZE
 def custom_collate_fn(batch):
     """Custom collate function for chunked 4D positional data."""
     input_ids_batch = torch.stack([item['input_ids'] for item in batch])
-    position_tensors_batch = torch.stack([item['position_tensors'] for item in batch])
     labels_batch = torch.stack([item['labels'] for item in batch])
     attention_mask_batch = torch.stack([item['attention_mask'] for item in batch])
 
     return {
         'input_ids': input_ids_batch,
-        'attention_mask': attention_mask_batch,
+        'attention_mask': None,
         'labels': labels_batch,
-        'position_tensors': position_tensors_batch
     }
 
 
 def main():
     # Setup paths
     project_dir = Path(__file__).resolve().parents[1]
-    data_dir = project_dir / "data" / "aria-midi-v1-unique-ext" / "data"
+    data_dir = project_dir / "data" / "aria-midi-v1-unique" / "data"
 
     # Get all MIDI files
     all_files = list(sorted(data_dir.glob("**/*.mid")))
@@ -49,6 +49,7 @@ def main():
 
     print("Creating val dataset...")
     val_dataset = MidiDataset4D(train_files[:1], max_seq_len=MAX_SEQ_LEN)
+    print(train_files[:1])
 
     # Create dataloaders
     train_loader = DataLoader(
@@ -68,7 +69,7 @@ def main():
     )
 
     # Setup logging and checkpoints
-    wandb_logger = WandbLogger(project="symbolic-music-4d", log_model=True)
+    wandb_logger = WandbLogger(project="symbolic-music-new", log_model=True)
 
     steps_per_epoch = len(train_loader)
     steps_per_half_epoch = steps_per_epoch // 2
@@ -82,7 +83,7 @@ def main():
         every_n_train_steps=steps_per_half_epoch,
     )
 
-    model = MidiAria(train_loader, lr=5e-4, warmup_steps=100)
+    model = MidiQwenNew(None, train_loader, lr=5e-4, warmup_steps=100)
 
     trainer = pl.Trainer(
         max_epochs=EPOCHS,
