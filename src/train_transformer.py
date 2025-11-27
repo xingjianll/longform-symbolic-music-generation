@@ -12,7 +12,7 @@ from src.dataloader import MidiDataset4D
 from src.transformer import MidiQwen
 from src.utils import CONTEXT_SIZE, EPOCHS
 
-BATCH_SIZE = 72*2
+BATCH_SIZE = 24
 MAX_SEQ_LEN = CONTEXT_SIZE
 
 def custom_collate_fn(batch):

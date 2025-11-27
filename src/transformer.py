@@ -610,7 +610,7 @@ class MidiQwen(pl.LightningModule):
         config.num_key_value_heads = 8
         config.intermediate_size = 3072  # 3072
         self.model = Qwen3ForCausalLM(config)
-        self.model.gradient_checkpointing_enable()
+        # self.model.gradient_checkpointing_enable()
         self.lr = lr
         self.warmup_steps = warmup_steps
         self.size = size
