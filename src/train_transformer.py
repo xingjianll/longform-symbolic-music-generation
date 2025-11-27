@@ -10,9 +10,8 @@ from sklearn.model_selection import train_test_split
 
 from src.dataloader import MidiDataset4D
 from src.transformer import MidiQwen
-from src.utils import CONTEXT_SIZE
+from src.utils import CONTEXT_SIZE, EPOCHS
 
-EPOCHS = 1000
 BATCH_SIZE = 32
 MAX_SEQ_LEN = CONTEXT_SIZE
 
@@ -34,7 +33,7 @@ def custom_collate_fn(batch):
 def main():
     # Setup paths
     project_dir = Path(__file__).resolve().parents[1]
-    data_dir = project_dir / "data" / "aria-midi-v1-unique-ext" / "data"
+    data_dir = project_dir / "data" / "aria-midi-v1-unique" / "data"
 
     # Get all MIDI files
     all_files = list(sorted(data_dir.glob("**/*.mid")))

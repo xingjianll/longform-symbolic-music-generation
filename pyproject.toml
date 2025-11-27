@@ -9,6 +9,6 @@ dependencies = [
     "symusic>=0.5.9",
     "torch>=2.9.1",
     "torchvision>=0.24.1",
-    "transformers>=4.57.1",
+    "transformers==4.57.3",
     "wandb>=0.23.0",
 ]

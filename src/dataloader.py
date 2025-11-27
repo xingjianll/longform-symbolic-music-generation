@@ -4,9 +4,7 @@ from typing import List
 import symusic
 from torch.utils.data import Dataset
 import torch
-from src.train_transformer import CONTEXT_SIZE
-
-
+from src.utils import CONTEXT_SIZE
 def merge_score_tracks(score: symusic.Score) -> None:
     """
     Merge tracks in a score by combining their notes into a single track.
