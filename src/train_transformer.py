@@ -18,7 +18,6 @@ MAX_SEQ_LEN = CONTEXT_SIZE
 def custom_collate_fn(batch):
     """Custom collate function for chunked 4D positional data."""
     input_ids_batch = torch.stack([item['input_ids'] for item in batch])
-    position_tensors_batch = torch.stack([item['position_tensors'] for item in batch])
     labels_batch = torch.stack([item['labels'] for item in batch])
     attention_mask_batch = torch.stack([item['attention_mask'] for item in batch])
 
@@ -26,7 +25,6 @@ def custom_collate_fn(batch):
         'input_ids': input_ids_batch,
         'attention_mask': attention_mask_batch,
         'labels': labels_batch,
-        'position_tensors': position_tensors_batch
     }
 
 
