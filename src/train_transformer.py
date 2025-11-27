@@ -2,7 +2,7 @@ from pathlib import Path
 
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch.loggers import WandbLogger
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 import lightning as pl
 import torch
 
